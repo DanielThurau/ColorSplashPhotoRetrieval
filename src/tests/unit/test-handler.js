@@ -10,7 +10,7 @@ describe('Test calling lambda handler', function () {
         const result = await app.handler(event, context)
 
         expect(result).to.be.an('object');
-        console.log("Printing Results of the test:" + result);
+        console.log("Printing Results of the test:" + JSON.stringify(result));
         expect(result.statusCode).to.equal(200);
 
     });
