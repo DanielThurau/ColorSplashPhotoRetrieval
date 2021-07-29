@@ -1,0 +1,7 @@
+.vscode/
+.env*
+images/*
+!images/.gitkeep 
+data.json
+.DS_Store
+node_modules/
