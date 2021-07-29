@@ -45,22 +45,22 @@ async function handle() {
         fetch: nodeFetch,
     })
 
-    const unsplashPageMark = getUnsplashPageMarker(s3);
-    console.log(unsplashPageMark);
+    const unsplashPageMark = await getUnsplashPageMarker(s3);
+    console.log("Retrieved the unsplash page marker: " + unsplashPageMark.toString());
 
     await unsplashClient.photos.list({page: unsplashPageMark.page, perPage: unsplashPageMark.perPage, orderBy: unsplashPageMark.orderBy})
         .then(async (result) => {
             if (result.errors) {
                 console.log('Error occurred when listing photos from unsplash: ', result.errors[0]);
             } else {
-                console.log(`Request status code from listing photo: ${result.status}`);
+                console.log(`Request status code from listing photos fro Unsplash: ${result.status}`);
             
                 const photos = result.response.results;
 
                 await Promise.all(photos.map(async (photo) => {
                     const url = photo.urls.raw;
                     const key = photo.id + ".jpg";
-                    var d = await uploadToS3(url, s3, key);
+                    await uploadToS3(url, s3, key);
                 }));
                 console.log("Successfully waited")
 
@@ -75,7 +75,7 @@ async function handle() {
 
     unsplashPageMark.page++;
 
-    putUnsplashPageMarker(s3, unsplashPageMark);
+    await putUnsplashPageMarker(s3, unsplashPageMark);
 
     return 200;
     
@@ -117,26 +117,40 @@ async function uploadToS3(uri, s3, key) {
                 console.log(error);
                 reject(error);
             } else {
-                await s3.headObject(params, async function (err, metadata) {  
-                    if (err && err.code === 'NotFound') {  
-                        await s3.putObject({
-                            Body: body,
-                            Key: key.toString(),
-                            Bucket: process.env.S3_BUCKET_NAME
-                        }, function(error, data) { 
-                            if (error) {
-                                console.log("Error uploading image to s3: " + key);
-                                console.log(error);
-                            } else {
+                console.log("Successfully downloaded image @ uri: " + uri);
+
+                var s3HeadResponse;
+
+                try {
+                    s3HeadResponse = await s3.headObject(params).promise();
+                    console.log("File exists in bucket in s3, not uploading " + key);
+                } catch(error) {
+                    console.log("The head respponse is caught in a try/catch");
+                    // console.log(error);
+                    if (error) {  
+                        if (error.code === 'NotFound') {
+                            try {
+
+                                var s3Response = await s3.putObject({
+                                    Body: body,
+                                    Key: key.toString(),
+                                    Bucket: process.env.S3_BUCKET_NAME}).promise();
                                 console.log("Success uploading to s3: " + key );
-                                resolve(data);
+
+                            } catch (err) {
+                                console.log("Error uploading image to s3: " + key);
+                                console.log(err);
+                                reject(err);
                             }
-                        }).promise(); 
-                    } else {
-                        console.log("File exists in bucket in s3, not uploading " + key);
+                        } else {
+                            console.log("Error getting head metadata on key: " + key);
+                            reject(error);
+                        }
                     }
-                }); 
-                // resolve(body);         
+                } 
+
+
+                resolve(body);         
             }   
         });
     });   
@@ -160,4 +174,4 @@ async function putUnsplashPageMarker(s3, unsplashPageMarker) {
     } catch (e) {
       throw new Error(`Could not upload file from S3: ${e.message}`)
     }
-}
+} 
