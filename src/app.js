@@ -5,7 +5,6 @@ const nodeFetch = require('node-fetch');
 const request = require('request');
 
 
-
 exports.handler = async (event, context) => {
     try {
         var statusCode = await handle();
@@ -28,17 +27,15 @@ async function handle() {
     const REGION = process.env.S3_REGION;
     AWS.config.update({region: REGION});
     const s3 = new AWS.S3({apiVersion: '2006-03-01'});
+    const ddb = new AWS.DynamoDB({apiVersion: '2012-08-10'});
+
 
     const unsplashPageMark = await getUnsplashPageMarker(s3);
     console.log("Retrieved the unsplash page marker: " + JSON.stringify(unsplashPageMark));
 
-    var estimatedBucketSize = unsplashPageMark.page * unsplashPageMark.perPage;
-    if (estimatedBucketSize > 1000) {
-        console.log("Activating Safegaurd for number of objects within S3. Estimated Size: " + estimatedBucketSize + ". Safegaurd: 1000.");
-        return 500;
-    }
+    await checkStats(ddb, unsplashPageMark);
 
-    await retrievePhotos(s3, unsplashPageMark);
+    await retrievePhotos(s3, ddb, unsplashPageMark);
 
     unsplashPageMark.page++;
 
@@ -46,31 +43,6 @@ async function handle() {
 
     return 200;
     
-}
-
-async function retrievePhotos(s3, unsplashPageMark) {
-    const unsplashClient = unsplash.createApi({
-        accessKey: process.env.UNSPLASH_ACCESS_KEY,
-        fetch: nodeFetch,
-    });
-
-    await unsplashClient.photos.list({page: unsplashPageMark.page, perPage: unsplashPageMark.perPage, orderBy: unsplashPageMark.orderBy})
-        .then(async (result) => {
-            if (result.errors) {
-                console.log('Error occurred when listing photos from unsplash: ', result.errors[0]);
-                throw new Error (result.error[0]);
-            } else {
-                console.log(`Status code from listing photos fro Unsplash: ${result.status}`);
-            
-                const photos = result.response.results;
-
-                await Promise.all(photos.map(async (photo) => {
-                    const url = photo.urls.raw;
-                    const key = photo.id + ".jpg";
-                    await transferToS3(url, s3, key);
-                }));
-            }
-      });
 }
 
 function verifyEnvironment() {
@@ -92,7 +64,6 @@ function verifyEnvironment() {
     }
 }
 
-
 async function getUnsplashPageMarker (s3) {
     try {
         const params = {
@@ -113,9 +84,50 @@ async function getUnsplashPageMarker (s3) {
     }
 }
 
-async function transferToS3(uri, s3, key) {
+async function checkStats(ddb, unsplashPageMark) {
+    var estimatedBucketSize = unsplashPageMark.page * unsplashPageMark.perPage;
+    if (estimatedBucketSize > 1050) {
+        console.log("Activating Safegaurd for number of objects within S3. Estimated Size: " + estimatedBucketSize + ". Safegaurd: 1000.");
+        throw new Error("S3 bucket full");
+    }
 
-    console.log("Attempting to upload photo at " + uri + " to " + key);
+    var estimatedTableRows = await ddb.describeTable({TableName: "ColorSplashImageIds"}).promise();
+    if (estimatedTableRows.Table.ItemCount > 10,000) {
+        console.log("Activating Safeguard for number of objects within DynamoDB. Estimated Size: " + estimatedTableRows + ". Safeguard: 10,000.");
+        throw new Error("DDB table full");
+    }
+
+    console.log(`Stats: Number of S3 Objects=${estimatedBucketSize}, Number of DDB Rows=${estimatedTableRows.Table.ItemCount}`);
+}
+
+async function retrievePhotos(s3, ddb, unsplashPageMark) {
+    const unsplashClient = unsplash.createApi({
+        accessKey: process.env.UNSPLASH_ACCESS_KEY,
+        fetch: nodeFetch,
+    });
+
+    await unsplashClient.photos.list({page: unsplashPageMark.page, perPage: unsplashPageMark.perPage, orderBy: unsplashPageMark.orderBy})
+        .then(async (result) => {
+            if (result.errors) {
+                console.log('Error occurred when listing photos from unsplash: ', result.errors[0]);
+                throw new Error (result.error[0]);
+            } else {
+                console.log(`Status code from listing photos fro Unsplash: ${result.status}`);
+            
+                const photos = result.response.results;
+
+                await Promise.all(photos.map(async (photo) => {
+                    const url = photo.urls.raw;
+                    const key = photo.id;
+                    await transferToS3(url, ddb, s3, key);
+                }));
+            }
+      });
+}
+
+async function transferToS3(uri, ddb, s3, key) {
+
+    console.log("Attempting to upload photo to" + key);
   
     var options = {
       uri: uri,
@@ -132,21 +144,23 @@ async function transferToS3(uri, s3, key) {
                 
                 var keyExists;
                 try {
-                    keyExists = await checkIfObjectExists(s3, process.env.S3_BUCKET_NAME, key);
+                    keyExists = await checkIfObjectExists(ddb, key);
                 } catch (err) {
                     reject(err);
                 }
-               
+                
+                var keyFileName = key.toString() + ".jpg";
                 if (!keyExists) {  
                     try {
                         await s3.putObject({
                             Body: body,
-                            Key: key.toString(),
+                            Key: keyFileName,
                             Bucket: process.env.S3_BUCKET_NAME}).promise();
-                        console.log("Success uploading to s3: " + key );
+                        console.log("Success uploading to s3: " + keyFileName );
+                        await putKey(ddb, key);
 
                     } catch (err) {
-                        console.log("Error uploading image to s3: " + key);
+                        console.log("Error uploading image to s3: " + keyFileName);
                         console.log(err);
                         reject(err);
                     }
@@ -157,24 +171,13 @@ async function transferToS3(uri, s3, key) {
     });   
 }
 
-async function checkIfObjectExists(s3, bucketName, key) {
-    const params = {
-        Bucket: bucketName,
-        Key: key
-    };
-
-    try {
-        await s3.headObject(params).promise();
-        console.log("File exists in bucket in s3, not uploading " + key);
-    } catch(error) {
-        if (error) {  
-            if (error.code === 'NotFound') {
-                return false;
-            }
-        }
-        throw new Error(`Error getting head metadata on key ${key}: ${error.message}`);
+async function checkIfObjectExists(ddb, key) {
+    let result = await queryKey(ddb, key);
+    if (result.Item !== undefined && result.Item !== null) {
+        return true;
     }
-    return true;
+
+    return false;
 }
 
 async function putUnsplashPageMarker(s3, unsplashPageMarker) {
@@ -190,3 +193,41 @@ async function putUnsplashPageMarker(s3, unsplashPageMarker) {
         throw new Error(`Could not upload file from S3: ${e.message}`)
     }
 } 
+
+async function queryKey(ddb, key) {
+    const tableName = "ColorSplashImageIds";
+
+    try {
+        var params = {
+            Key: {
+             "ImageId": {
+                 S: key,
+             }, 
+            }, 
+            TableName: tableName
+        };
+        return await ddb.getItem(params).promise();
+        
+    } catch (error) {
+        throw new Error(`Could not query key from DynamoDB: ${error.message}`)
+    }
+}
+
+async function putKey(ddb, key) {
+    const tableName = "ColorSplashImageIds";
+
+    try {
+        var params = {
+            Item: {
+             "ImageId": {
+                 S: key,
+             }, 
+            }, 
+            TableName: tableName
+        };
+
+        await ddb.putItem(params).promise();
+    } catch (error) {
+        throw new Error(`Could not put key in DynamoDB: ${error.message}`)
+    }
+}
