@@ -67,7 +67,7 @@ function verifyEnvironment() {
 async function getUnsplashPageMarker (s3) {
     try {
         const params = {
-            Bucket: process.env.S3_BUCKET_NAME,
+            Bucket: process.env.S3_CONFIG_BUCKET_NAME,
             Key: process.env.UNSPLASH_PAGE_MARKER_KEY,
         }
   
@@ -86,6 +86,7 @@ async function getUnsplashPageMarker (s3) {
 
 async function checkStats(ddb, unsplashPageMark) {
     var estimatedBucketSize = unsplashPageMark.page * unsplashPageMark.perPage;
+    // TODO do an actual bucket size
     if (estimatedBucketSize > 1050) {
         console.log("Activating Safegaurd for number of objects within S3. Estimated Size: " + estimatedBucketSize + ". Safegaurd: 1000.");
         throw new Error("S3 bucket full");
@@ -117,20 +118,20 @@ async function retrievePhotos(s3, ddb, unsplashPageMark) {
                 const photos = result.response.results;
 
                 await Promise.all(photos.map(async (photo) => {
-                    const url = photo.urls.raw;
+                    const urls = photo.urls;
                     const key = photo.id;
-                    await transferToS3(url, ddb, s3, key);
+                    await transferToS3(urls, ddb, s3, key);
                 }));
             }
       });
 }
 
-async function transferToS3(uri, ddb, s3, key) {
+async function transferToS3(urls, ddb, s3, key) {
 
-    console.log("Attempting to upload photo to" + key);
+    console.log("Attempting to upload photo to " + key);
   
     var options = {
-      uri: uri,
+      uri: urls.raw,
       encoding: null
     };
   
@@ -156,14 +157,16 @@ async function transferToS3(uri, ddb, s3, key) {
                             Body: body,
                             Key: keyFileName,
                             Bucket: process.env.S3_BUCKET_NAME}).promise();
-                        console.log("Success uploading to s3: " + keyFileName );
-                        await putKey(ddb, key);
+                        console.log("Success uploading to s3: " + key );
+                        await putKey(ddb, key, urls);
 
                     } catch (err) {
-                        console.log("Error uploading image to s3: " + keyFileName);
+                        console.log("Error uploading image to s3: " + key);
                         console.log(err);
                         reject(err);
                     }
+                } else{
+                    console.log("Failed updloading to s3: " + key + ". Reason: Key already exists in table.")
                 }
                 resolve(body);         
             }   
@@ -187,7 +190,7 @@ async function putUnsplashPageMarker(s3, unsplashPageMarker) {
         await s3.putObject({
             Body: JSON.stringify(unsplashPageMarker),
             Key: key,
-            Bucket: process.env.S3_BUCKET_NAME}).promise();
+            Bucket: process.env.S3_CONFIG_BUCKET_NAME}).promise();
         console.log(`Success uploading to s3: ${key}`);
     } catch (e) {
         throw new Error(`Could not upload file from S3: ${e.message}`)
@@ -213,7 +216,7 @@ async function queryKey(ddb, key) {
     }
 }
 
-async function putKey(ddb, key) {
+async function putKey(ddb, key, urls) {
     const tableName = "ColorSplashImageIds";
 
     try {
@@ -221,7 +224,19 @@ async function putKey(ddb, key) {
             Item: {
              "ImageId": {
                  S: key,
-             }, 
+             },
+             "SmallURL": {
+                 S: urls.small
+             },
+             "FullURL": {
+                 S: urls.full
+             },
+             "RegularURL": {
+                 S: urls.regular
+             },
+             "ThumbnailURL": {
+                 S: urls.thumb
+             }
             }, 
             TableName: tableName
         };
