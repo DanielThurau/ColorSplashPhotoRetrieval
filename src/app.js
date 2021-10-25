@@ -6,22 +6,23 @@ const request = require('request');
 
 
 exports.handler = async (event, context) => {
+    response = {};
     try {
         var statusCode = await handle();
-
         response = {
             'statusCode': statusCode,
         }
     } catch (err) {
         console.log(err);
-        return err;
+        response = {
+            'statusCode': 500,
+        }
     }
 
     return response
 };
 
 async function handle() {
-    // TODO, programattically add the env variables to the template.yaml
     verifyEnvironment();
 
     const REGION = process.env.S3_REGION;
@@ -29,11 +30,10 @@ async function handle() {
     const s3 = new AWS.S3({apiVersion: '2006-03-01'});
     const ddb = new AWS.DynamoDB({apiVersion: '2012-08-10'});
 
-
     const unsplashPageMark = await getUnsplashPageMarker(s3);
     console.log("Retrieved the unsplash page marker: " + JSON.stringify(unsplashPageMark));
 
-    await checkStats(ddb, unsplashPageMark);
+    await checkGuardRails(ddb, unsplashPageMark);
 
     await retrievePhotos(s3, ddb, unsplashPageMark);
 
@@ -54,13 +54,24 @@ function verifyEnvironment() {
         throw new Error("Needed env var UNSPLASH_ACCESS_KEY, but was not present");
     }
 
+    if(!(process.env.UNSPLASH_PAGE_MARKER_KEY)) {
+        throw new Error("Needed env var UNSPLASH_PAGE_MARKER_KEY, but was not present");
+    }
+
     if(!(process.env.S3_REGION)){
         throw new Error("Needed env var S3_REGION, but was not present");
     }
 
-    if(!(process.env.UNSPLASH_PAGE_MARKER_KEY)) {
-        throw new Error("Needed env var UNSPLASH_PAGE_MARKER_KEY, but was not present");
+    if(!(process.env.S3_CONFIG_BUCKET_NAME)) {
+        throw new Error("Needed env var S3_CONFIG_BUCKET_NAME, but was not present");
+    }
 
+    if(!(process.env.S3_BUCKET_NAME)) {
+        throw new Error("Needed env var S3_BUCKET_NAME, but was not present");
+    }
+
+    if(!(process.env.DDB_TABLE_NAME)) {
+        throw new Error("Needed env var DDB_TABLE_NAME, but was not present");
     }
 }
 
@@ -84,17 +95,29 @@ async function getUnsplashPageMarker (s3) {
     }
 }
 
-async function checkStats(ddb, unsplashPageMark) {
-    var estimatedBucketSize = unsplashPageMark.page * unsplashPageMark.perPage;
-    // TODO do an actual bucket size
-    if (estimatedBucketSize > 1050) {
-        console.log("Activating Safegaurd for number of objects within S3. Estimated Size: " + estimatedBucketSize + ". Safegaurd: 1000.");
+async function checkGuardRails(ddb, unsplashPageMark) {
+    const retrievedImageCount = unsplashPageMark.page * unsplashPageMark.perPage;
+    const estimatedTableRows = await ddb.describeTable({TableName: "ColorSplashImageIds"}).promise();
+    const estimatedBucketSize = retrievedImageCount - estimatedTableRows;
+
+    var ddb_guardrail = 10_000;
+    var s3_guardrail = 2_000;
+
+    if (process.env.DDB_ITEM_COUNT_GUARDRAIL) {
+        ddb_guardrail = process.env.DDB_ITEM_COUNT_GUARDRAIL;
+    }
+
+    if (process.env.S3_BUCKET_SIZE_GUARDRAIL) {
+        s3_guardrail = process.env.S3_BUCKET_SIZE_GUARDRAIL;
+    }
+
+    if (estimatedBucketSize  > s3_guardrail) {
+        console.log("Activating Safegaurd for number of objects within S3. Estimated Size: " + estimatedBucketSize + ". Safegaurd: " + s3_guardrail);
         throw new Error("S3 bucket full");
     }
 
-    var estimatedTableRows = await ddb.describeTable({TableName: "ColorSplashImageIds"}).promise();
-    if (estimatedTableRows.Table.ItemCount > 10,000) {
-        console.log("Activating Safeguard for number of objects within DynamoDB. Estimated Size: " + estimatedTableRows + ". Safeguard: 10,000.");
+    if (estimatedTableRows.Table.ItemCount > ddb_guardrail) {
+        console.log("Activating Safeguard for number of objects within DynamoDB. Estimated Size: " + estimatedTableRows + ". Safeguard: " + ddb_guardrail);
         throw new Error("DDB table full");
     }
 
@@ -111,7 +134,7 @@ async function retrievePhotos(s3, ddb, unsplashPageMark) {
         .then(async (result) => {
             if (result.errors) {
                 console.log('Error occurred when listing photos from unsplash: ', result.errors[0]);
-                throw new Error (result.error[0]);
+                throw new Error (result.errors[0]);
             } else {
                 console.log(`Status code from listing photos fro Unsplash: ${result.status}`);
             
@@ -142,7 +165,6 @@ async function transferToS3(urls, ddb, s3, key) {
                 console.log(error);
                 reject(error);
             } else {
-                
                 var keyExists;
                 try {
                     keyExists = await checkIfObjectExists(ddb, key);
@@ -198,7 +220,7 @@ async function putUnsplashPageMarker(s3, unsplashPageMarker) {
 } 
 
 async function queryKey(ddb, key) {
-    const tableName = "ColorSplashImageIds";
+    const tableName = process.env.DDB_TABLE_NAME;
 
     try {
         var params = {
@@ -217,7 +239,7 @@ async function queryKey(ddb, key) {
 }
 
 async function putKey(ddb, key, urls) {
-    const tableName = "ColorSplashImageIds";
+    const tableName = process.env.DDB_TABLE_NAME;
 
     try {
         var params = {

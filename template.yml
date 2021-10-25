@@ -1,5 +1,3 @@
-# This is the SAM template that represents the architecture of your serverless application
-# https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-template-basics.html
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
   ColorSplashPhotoRetrieval
@@ -7,8 +5,6 @@ Description: >-
 Transform:
   - AWS::Serverless-2016-10-31
 
-# Resources declares the AWS resources that you want to include in the stack
-# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html
 Resources:
   ColorSplashPhotoRetrieval:
     Type: AWS::Serverless::Function
@@ -18,7 +14,7 @@ Resources:
       Runtime: nodejs14.x
       MemorySize: 512
       Timeout: 100
-      Description: A Lambda function that returns a static string.
+      Description: A Lambda that retrieve photos from the Unsplash API.
       FunctionName: ColorSplashPhotoRetrieval-Alpha
       Policies:
         - AWSLambdaBasicExecutionRole
