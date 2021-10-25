@@ -3,7 +3,7 @@
 
 ## Description
 
-ColorSplashPhotoRetrieval (CSPR) is a single component of the overarching ColorSplash web application that can be found at https://thurau.io/colorsplash/. ColorSplash allows users to browse royalty free images that have colors within a certain Euclidean distance of a provided HEX code. CSPR runs in a NodeJS-14.x AWS Lambda and uses the [Unsplash API](https://unsplash.com/documentation) to list royalty free images and stores them in an S3 bucket for later processing. CSPR runs asynchronously within the larger application context via CloudWatch Events.
+ColorSplashPhotoRetrieval (CSPR) is a component of the overarching ColorSplash web application that can be found at https://thurau.io/colorsplash/. ColorSplash allows users to browse royalty free images that have colors within a certain Euclidean distance of a provided HEX code. CSPR runs in a NodeJS-14.x AWS Lambda runtime and uses the [Unsplash API](https://unsplash.com/documentation) to list royalty free images and stores them in an S3 bucket for later processing. CSPR runs asynchronously within the larger application context via CloudWatch Events.
 
 You can see other components of this project in the following Github repos
 
@@ -13,9 +13,9 @@ You can see other components of this project in the following Github repos
 
 ## Motivation
 
-A friend was facing an issue when trying to create social media posts with stock footage for an ecommerce company we recently launched. She had developed a branding guide and had chosen what the colors she wanted to include in the website, logos, and eventual marketing material. But when it was time to do some marketing posts, trying to apply that style guide was difficult. For all the tools on the internet she used, none were able to query royalty free images that were close to the HEX color codes she had selected. This project was born to remedy this issue. 
+A friend was facing issues when trying to create social media posts for an ecommerce company we recently launched. She had developed a branding guide and had chosen what colors she wanted to include in the website, logos, and eventual marketing material. But when it was time to make marketing posts, trying to apply that style guide was difficult. For all the tools on the internet she used, none were able to query royalty free images that were close to the HEX color codes she had selected. This project was born to remedy this issue. 
 
-I wanted to provide a clean minimal interface on a website that would have a form for the HEX code, and quickly return royalty free images from a dataset that were a provided Eucledian distance from the original HEX code. ColorSplash would be the web application that had the components for image processing, a backend API that could use the processed image metadata, and a frontend that could display close images in a meaningful way.
+I wanted to provide a clean minimal interface on a website that would have a form for a HEX code, and query a REST API that would return royalty free images that had a subset of colors within close to the original HEX code.
 
 ## Features And Roadmap
 
@@ -34,9 +34,9 @@ I wanted to provide a clean minimal interface on a website that would have a for
 
 ## Tech Used
 
-Due to CSPR's asychronous nature, it was designed to be run in a functional runtime from the start. Due to my history with AWS, I decided to use AWS as the cloud provider and write the project as a serverless application that is deployed using the AWS Serverless Application Model (AWS SAM) command line interface. You can find out more about AWS SAM on its [homepage](https://aws.amazon.com/serverless/sam/).
+Due to CSPR's asychronous nature, it was designed to be run in a functional runtime from the start. Due to my history with AWS, I decided to use AWS as the cloud provider and write the project as a serverless application that is deployed using the AWS Serverless Application Model (AWS SAM) CLI tool. You can find out more about AWS SAM on its [homepage](https://aws.amazon.com/serverless/sam/).
 
-The logic of the application is centered around using the free [Unsplash API](https://unsplash.com/documentation) to programatically scan the entire library of royalty free images provided by Unsplash. Unsplash vends [several libraries and SDKs](https://unsplash.com/documentation#libraries--sdks) in a few different languages, so I decided to use [unsplash-js](https://github.com/unsplash/unsplash-js) in a NodeJS-14.x AWS Lambda.
+The logic of the application is based on using the free [Unsplash API](https://unsplash.com/documentation) to programatically scan the entire library of royalty free images provided by Unsplash. Unsplash vends [several libraries and SDKs](https://unsplash.com/documentation#libraries--sdks), so I decided to use [unsplash-js](https://github.com/unsplash/unsplash-js) in a NodeJS-14.x AWS Lambda.
 
 ## Installation
 

@@ -1,7 +1,7 @@
 {
     "name": "colorsplashphotoretrieval",
-    "description": "Lambda node package to download photos from UnSplash for later batch processing",
-    "version": "0.0.1",
+    "description": "Lambda node package to download photos from Unsplash for later batch processing",
+    "version": "1.0.0",
     "main": "src/app.js",
     "author": "Daniel Thurau daniel.n.thurau@gmail.com (https://thurau.io)",
     "license": "ISC",
