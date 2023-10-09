@@ -3,7 +3,7 @@
     "description": "Lambda node package to download photos from Unsplash for later batch processing",
     "version": "1.0.0",
     "main": "src/app.js",
-    "author": "Daniel Thurau daniel.n.thurau@gmail.com (https://thurau.io)",
+    "author": "Daniel Thurau daniel.n.thurau@gmail.com (https://www.thurau.io/)",
     "license": "ISC",
     "devDependencies": {
         "jest": "^26.6.3",

@@ -1,5 +1,6 @@
 .vscode/
 .env*
+!.env.example
 .DS_Store
 node_modules/
 .aws-sam/
